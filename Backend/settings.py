@@ -1,4 +1,5 @@
 from datetime import timedelta
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -15,6 +16,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -23,11 +25,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'Users',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'rest_framework_simplejwt',
     'corsheaders',
-    'Users',
+    
 ]
 
 MIDDLEWARE = [
@@ -46,7 +49,7 @@ ROOT_URLCONF = 'Backend.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR,'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -64,8 +67,13 @@ WSGI_APPLICATION = 'Backend.wsgi.application'
 # Database
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'doctor',
+        'USER': 'postgres',
+        'PASSWORD': '8086',
+        'HOST': 'localhost',  # Set to the appropriate host, e.g., '127.0.0.1'
+        'PORT': '5432',       # Default PostgreSQL port
+        
     }
 }
 
@@ -103,6 +111,43 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # The origin of your frontend app
+]
+
+CORS_ALLOW_METHODS = [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+]
+CORS_ALLOW_HEADERS = [
+    'content-type',
+    'authorization',
+    'x-requested-with',
+    'accept',
+    'origin',
+    'x-csrftoken',
+]
+
+# settings.py
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_USE_TLS = True
+EMAIL_PORT = 587
+EMAIL_HOST_USER = 'bisherp297@gmail.com'
+EMAIL_HOST_PASSWORD = 'xtjz gujy joix asvl'
+
+
+
+
+
+
+
 
 # Simple JWT settings
 SIMPLE_JWT = {
