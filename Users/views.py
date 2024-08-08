@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from .serializers import UserRegisterSerializer, UserSerializer, OtpVerificationSerializer,UserLoginSerializer
 from .models import UserProfile  # Ensure UserProfile is imported
 from .utils import send_otp_via_email
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -111,6 +112,7 @@ class Otpverification(APIView):
 
                 if user.otp == entered_otp:
                     user.is_active = True
+                    user.otp = None
                     user.save()
                     return Response({'message': 'User registered and verified successfully'}, status=status.HTTP_200_OK)
                 else:
@@ -122,6 +124,47 @@ class Otpverification(APIView):
                 return Response({'error': 'Internal Server Error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+
+
+class ForgotPassword(APIView):
+    permission_classes = [permissions.AllowAny]
+    def post(self,request,*args,**kwargs):
+        email = request.data.get('email')
+        try:
+            user = User.objects.get(email=email)
+            send_otp_via_email(user.email,user.otp)
+            response_data = {
+                'message': 'OTP sent successfully',
+                'email': user.email,
+                'user_id': user.id,
+            }
+            return Response(response_data,status=status.HTTP_200_ok)
+        except User.DoesNotExist:
+            return Response({'exists':False,'message':'Invalid Email'},status=status.HTTP_404_NOT_FOUND)
+
+
+class ChangePassword(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def post(self,request,*args, **kwargs):
+        user_id = self.kwargs.get('id')
+        print(user_id)
+        new_password = request.data.get('password')
+        
+        
+        
+        try:
+            user = User.objects.get(id=user_id)
+            user_password = make_password(new_password)
+            user.password = user_password
+            user.save()
+
+            return Response({'success':True,'message': 'Password changed successfully.'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error':'User not found'},status=status.HTTP_404_NOT_FOUND)
+    
+
+
 
                 
 

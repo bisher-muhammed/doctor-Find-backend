@@ -36,28 +36,36 @@ class MyAccountManager(BaseUserManager):
     def create_superuser(self, username, email, phone_number, password=None):
         user = self.create_user(
             username=username,
-            email=email,
+            email=self.normalize_email(email),
             phone_number=phone_number,
             password=password,
         )
         user.is_admin = True
+        user.is_active = True
         user.is_staff = True
         user.is_superuser = True
         user.save(using=self._db)
         return user
 
 class MyUser(AbstractBaseUser):
+
+    USER_TYPE_CHOICES =(
+        ('admin','Admin'),
+        ('patient','Patient'),
+        ('doctor','Doctor')
+    )
     username = models.CharField(max_length=30, unique=True)
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=15)
-    date_joined = models.DateTimeField(verbose_name='date joined',auto_now_add=True)
-    last_login = models.DateTimeField(verbose_name='last login',auto_now_add=True)
+    date_joined = models.DateTimeField(verbose_name='date joined',auto_now=True)
+    last_login = models.DateTimeField(verbose_name='last login',auto_now=True)
 
-    is_active = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_admin = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
-    otp = models.CharField(null=True, blank=True)  
+    otp = models.CharField(null=True, blank=True)
+    user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default='patient')  
 
 
     objects = MyAccountManager()
