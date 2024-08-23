@@ -44,6 +44,18 @@ class MyAccountManager(BaseUserManager):
         user.is_active = True
         user.is_staff = True
         user.is_superuser = True
+        user.user_type = 'admin'
+        user.save(using=self._db)
+        return user
+
+    def create_doctor(self, username, email, phone_number, password=None):
+        user = self.create_user(
+            username=username,
+            email=self.normalize_email(email),
+            phone_number=phone_number,
+            password=password,
+        )
+        user.user_type = 'doctor'
         user.save(using=self._db)
         return user
 
@@ -65,6 +77,7 @@ class MyUser(AbstractBaseUser):
     is_admin = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
     otp = models.CharField(null=True, blank=True)
+    otp_expiry = models.DateTimeField(null=True, blank=True)
     user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default='patient')  
 
 
@@ -84,7 +97,7 @@ class MyUser(AbstractBaseUser):
 
 class UserProfile(models.Model):
     user = models.ForeignKey(MyUser,on_delete=models.CASCADE,related_name='User_profile')
-    prfile_pic = models.ImageField(upload_to='media/profile_pic',blank=True,null=True)
+    profile_pic = models.ImageField(upload_to='media/profile_pic', blank=True, null=True)
     first_name = models.CharField(max_length=30, blank=True)
     last_name = models.CharField(max_length=30, blank=True)
     date_of_birth = models.DateField(null=True, blank=True)

@@ -1,10 +1,17 @@
 from django.shortcuts import render
 from rest_framework.response import Response
-from rest_framework.decorators import APIView
+from rest_framework.views import APIView
 from django.contrib.auth import authenticate
 from rest_framework import status, permissions
 from rest_framework_simplejwt.tokens import RefreshToken
-
+from Users.utils import generate_pdf,send_notification_user
+from Doctors.models import DoctorProfile
+from Doctors.serializers import DocumentSerializer
+from django.contrib import messages
+from Doctors.models import Document
+from.serializers import DocumentVerificationSerializer
+import io
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 
 class AdminLogin(APIView):
@@ -52,3 +59,64 @@ class AdminLogin(APIView):
 
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+
+import logging
+logger = logging.getLogger(__name__)
+
+logger = logging.getLogger(__name__)
+
+class FetchDocuments(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        try:
+            documents = Document.objects.select_related('doctor').all()
+            print(documents)
+            serializer = DocumentSerializer(documents, many=True)
+            print(serializer)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error fetching documents: {str(e)}", exc_info=True)
+            return Response({'detail': 'An error occurred while fetching documents.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+logger = logging.getLogger(__name__)
+
+class VerifyDocuments(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        logger.info("Received request to verify documents.")
+        
+        # Check if the user is a superuser
+        if not request.user.is_superuser:
+            logger.warning("Unauthorized attempt to verify documents by non-superuser.")
+            return Response({'detail': 'You do not have permission to perform this action.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = DocumentVerificationSerializer(data=request.data)
+        if serializer.is_valid():
+            document_ids = serializer.validated_data['document_ids']
+            doctor_id = serializer.validated_data['doctor_id']  # Ensure doctor_id is passed and used
+            logger.debug(f"Document IDs received for verification: {document_ids}")
+
+            try:
+                # Update documents to set is_verified = True
+                updated_count = Document.objects.filter(id__in=document_ids).update(is_verified=True)
+                logger.info(f"Documents updated successfully: {updated_count}")
+
+                return Response({'message': f'{updated_count} documents have been marked as verified.'}, status=status.HTTP_200_OK)
+
+            except Exception as e:
+                logger.error(f"Error updating documents: {str(e)}", exc_info=True)
+                return Response({'detail': 'An error occurred while updating documents.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        logger.warning(f"Validation errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

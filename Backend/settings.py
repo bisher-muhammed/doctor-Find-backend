@@ -14,8 +14,24 @@ SECRET_KEY = 'django-insecure-m^n#@g0dhfn!&i+hvkl71*#=3jtsicc*1p=8qh7bv)61hi#lka
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+]
+# settings.py
+CSRF_COOKIE_SECURE = False  # Should be True in production with HTTPS
+CSRF_TRUSTED_ORIGINS = ['http://localhost:8000']
 
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173',  # Include your frontend's URL here
+]
+
+
+
+# Django settings.py example
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = True
 
 # Application definition
 INSTALLED_APPS = [
@@ -27,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'Users',
     'Adminapp',
+    'Doctors',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'rest_framework_simplejwt',
@@ -139,7 +156,7 @@ CORS_ALLOW_HEADERS = [
     'origin',
     'x-csrftoken',
 ]
-CORS_ALLOW_ALL_ORIGINS=True
+
 CORS_ALLOW_CREDENTIALS=True
 # settings.py
 
@@ -159,7 +176,7 @@ EMAIL_HOST_PASSWORD = 'xtjz gujy joix asvl'
 
 # Simple JWT settings
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=50),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=90),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
@@ -193,3 +210,5 @@ SIMPLE_JWT = {
 
 # settings.py
 AUTH_USER_MODEL = 'Users.MyUser'
+
+USE_TZ = True 

@@ -1,6 +1,7 @@
 from django.forms import ValidationError
 from rest_framework import serializers
 from .models import MyUser,UserProfile
+from datetime import date
 from django.contrib.auth import get_user_model,authenticate
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 User = get_user_model()
@@ -23,6 +24,9 @@ class UserSerializer(serializers.ModelSerializer):
         exclude = ('password',)
 
 
+
+
+
 class UserRegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -33,6 +37,7 @@ class UserRegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
+        user_type = validated_data.get('user_type', 'patient')
         instance = self.Meta.model(**validated_data)
 
         if password is not None:
@@ -70,4 +75,100 @@ class UserLoginSerializer(serializers.Serializer):
             raise serializers.ValidationError('Account is blocked')
 
         print("User validated successfully.")
+        return data
+
+
+
+class UserProfileDetailSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserProfile
+        fields = '__all__'
+
+    def get_user(self, obj):
+        user = obj.user
+        return {
+            'username': user.username,
+            'email': user.email,
+            'phone_number': user.phone_number,
+        }
+
+
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = '__all__'
+
+    def validate_first_name(self, value):
+        """Ensure first name is alphabetic and not too short."""
+        if not value.isalpha():
+            raise serializers.ValidationError("First name should contain only alphabetic characters.")
+        if len(value) < 2:
+            raise serializers.ValidationError("First name must be at least 2 characters long.")
+        return value
+
+    def validate_last_name(self, value):
+        """Ensure last name is alphabetic and not too short."""
+        if not value.isalpha():
+            raise serializers.ValidationError("Last name should contain only alphabetic characters.")
+        if len(value) < 2:
+            raise serializers.ValidationError("Last name must be at least 2 characters long.")
+        return value
+
+    def validate_date_of_birth(self, value):
+        """Ensure date of birth is a valid past date."""
+        if value and value > date.today():
+            raise serializers.ValidationError("Date of birth cannot be in the future.")
+        return value
+
+    def validate_gender(self, value):
+        """Ensure gender is one of the allowed choices."""
+        valid_genders = ['Male', 'Female', 'Other']
+        if value not in valid_genders:
+            raise serializers.ValidationError("Invalid gender choice.")
+        return value
+
+    def validate_postal_code(self, value):
+        """Ensure postal code is numeric and of appropriate length."""
+        if not value.isdigit():
+            raise serializers.ValidationError("Postal code should contain only digits.")
+        if len(value) not in [5, 6, 10]:
+            raise serializers.ValidationError("Postal code must be 5, 6, or 10 digits long.")
+        return value
+
+    def validate_city(self, value):
+        """Ensure city name is alphabetic."""
+        if not value.isalpha():
+            raise serializers.ValidationError("City name should contain only alphabetic characters.")
+        return value
+
+    def validate_state(self, value):
+        """Ensure state name is alphabetic."""
+        if not value.isalpha():
+            raise serializers.ValidationError("State name should contain only alphabetic characters.")
+        return value
+
+    def validate_country(self, value):
+        """Ensure country name is alphabetic."""
+        if not value.isalpha():
+            raise serializers.ValidationError("Country name should contain only alphabetic characters.")
+        return value
+
+    def validate_address(self, value):
+        """Ensure address is not empty and not too long."""
+        if len(value) < 5:
+            raise serializers.ValidationError("Address must be at least 5 characters long.")
+        if len(value) > 255:
+            raise serializers.ValidationError("Address cannot be longer than 255 characters.")
+        return value
+
+    def validate(self, data):
+        """Perform additional cross-field validation if needed."""
+        # For example, you could ensure city, state, and country fields are all filled out together
+        if any(field in data for field in ['city', 'state', 'country']):
+            if not all(data.get(field) for field in ['city', 'state', 'country']):
+                raise serializers.ValidationError("City, state, and country must all be provided together.")
         return data

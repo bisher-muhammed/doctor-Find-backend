@@ -1,9 +1,15 @@
+
 import random
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework import status, permissions
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .serializers import UserRegisterSerializer, UserSerializer, OtpVerificationSerializer,UserLoginSerializer
+from .serializers import *
+
+
+from Doctors.models import DoctorProfile
 from .models import UserProfile  # Ensure UserProfile is imported
 from .utils import send_otp_via_email
 from django.contrib.auth.hashers import make_password
@@ -84,7 +90,10 @@ class RegisterView(APIView):
                 user.is_active = False
                 otp = str(random.randint(1000, 9999))
                 user.otp = otp
+                user.otp_expiry = timezone.now()+timedelta(minutes=1)
+
                 user.save()
+                
                 UserProfile.objects.get_or_create(user=user)
                 send_otp_via_email(user.email, otp)
 
@@ -110,9 +119,10 @@ class Otpverification(APIView):
                 entered_otp = serializer.validated_data.get('otp')
                 user = User.objects.get(email=email)
 
-                if user.otp == entered_otp:
+                if user.otp == entered_otp and user.otp_expiry > timezone.now():
                     user.is_active = True
                     user.otp = None
+                    user.otp_expiry = None
                     user.save()
                     return Response({'message': 'User registered and verified successfully'}, status=status.HTTP_200_OK)
                 else:
@@ -127,25 +137,35 @@ class Otpverification(APIView):
         
 
 
+
 class ForgotPassword(APIView):
     permission_classes = [permissions.AllowAny]
-    def post(self,request,*args,**kwargs):
+
+    def post(self, request, *args, **kwargs):
         email = request.data.get('email')
         try:
             user = User.objects.get(email=email)
-            send_otp_via_email(user.email,user.otp)
+            otp = str(random.randint(1000, 9999))
+            print("Generated OTP:", otp)
+            # Set OTP expiry time (e.g., 10 minutes from now)
+            otp_expiry = timezone.now() + timedelta(minutes=10)
+            send_otp_via_email(user.email, otp)
+            user.otp = otp
+            user.otp_expiry = otp_expiry
+            user.save()
+
             response_data = {
                 'message': 'OTP sent successfully',
                 'email': user.email,
                 'user_id': user.id,
             }
-            return Response(response_data,status=status.HTTP_200_ok)
+            return Response(response_data, status=status.HTTP_200_OK)
         except User.DoesNotExist:
-            return Response({'exists':False,'message':'Invalid Email'},status=status.HTTP_404_NOT_FOUND)
+            return Response({'exists': False, 'message': 'Invalid Email'}, status=status.HTTP_404_NOT_FOUND)
 
 
 class ChangePassword(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    
     def post(self,request,*args, **kwargs):
         user_id = self.kwargs.get('id')
         print(user_id)
@@ -165,17 +185,78 @@ class ChangePassword(APIView):
     
 
 
+class ResendOtpView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+
+        if not email:
+            return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email=email)
+
+            if user.is_active:
+                return Response({'error': 'User is already verified'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Generate a new OTP and set expiry
+            otp = str(random.randint(1000, 9999))
+            user.otp = otp
+            user.otp_expiry = timezone.now() + timedelta(minutes=1)  # OTP valid for 5 minutes
+            user.save()
+
+            # Send OTP to the user's email
+            send_otp_via_email(user.email, otp)
+            print("otp re_sended",otp)
+
+            return Response({'message': 'OTP resent successfully'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            print(f"Error during OTP resend: {e}")
+            return Response({'error': 'Internal Server Error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
 
                 
+class UserProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+        except UserProfile.DoesNotExist:
+            return Response({"error": "UserProfile not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Use a serializer that includes profile details
+        serializer = UserProfileDetailSerializer(user_profile)
+        return Response(serializer.data)
+
+class EditProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+        except UserProfile.DoesNotExist:
+            return Response({'error': "UserProfile does not exist"}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = UserProfileSerializer(user_profile)
+        return Response(serializer.data)
 
 
+    def put(self, request):
+            try:
+                user_profile = UserProfile.objects.get(user=request.user)
+            except UserProfile.DoesNotExist:
+                return Response({'error': "UserProfile does not exist"}, status=status.HTTP_404_NOT_FOUND)
 
-   
-
-
+            serializer = UserProfileSerializer(user_profile, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            print("error",serializer.errors)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-
-
 
 
 
