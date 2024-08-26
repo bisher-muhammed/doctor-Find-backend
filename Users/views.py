@@ -7,9 +7,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .serializers import *
+from rest_framework.generics import ListAPIView
+from Doctors.serializers import DoctorProfileSerializer,SlotCreateSerializer
 
 
-from Doctors.models import DoctorProfile
+
+
+from Doctors.models import DoctorProfile,Slots
 from .models import UserProfile  # Ensure UserProfile is imported
 from .utils import send_otp_via_email
 from django.contrib.auth.hashers import make_password
@@ -258,5 +262,84 @@ class EditProfileView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
+#######################################################################################################################################################
+
+class Doctors_list(ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    serializer_class = DoctorProfileSerializer
+
+    def get_queryset(self):
+        # This method should return the queryset for the view
+        queryset = DoctorProfile.objects.filter(is_verified=True)
+        
+        return queryset
+
+    def get(self, request, *args, **kwargs):
+        # This method handles GET requests
+        queryset = self.get_queryset()
+        
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class SlotListView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = SlotCreateSerializer
+
+    def get_queryset(self):
+        doctor_id = self.kwargs.get('doctor_id')
+        print(f"Requested doctor ID: {doctor_id}")
+
+        try:
+            doctor = DoctorProfile.objects.get(id=doctor_id)
+            if doctor.is_verified:
+                slots = Slots.objects.filter(doctor=doctor)
+                
+                return slots
+            else:
+                return Slots.objects.none()
+        except DoctorProfile.DoesNotExist:
+            return Slots.objects.none()
+        
+    def get(self, request, *args, **kwargs):
+        doctor_id = self.kwargs.get('doctor_id')
+
+        try:
+            doctor = DoctorProfile.objects.get(id=doctor_id)
+        except DoctorProfile.DoesNotExist:
+            return Response({'detail': 'Doctor not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the doctor is verified
+        if not doctor.is_verified:
+            return Response({'detail': 'Doctor is not verified.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Fetch the slots for the doctor
+        slots = self.get_queryset()
+
+        # Serialize the doctor profile
+        doctor_serializer = DoctorProfileSerializer(doctor)
+        print(f"Doctor Profile Serialized Data: {doctor_serializer.data}")
+
+        # Serialize the slots
+        slot_serializer = self.get_serializer(slots, many=True)
+        
+
+        # Combine the data
+        response_data = {
+            'doctor': doctor_serializer.data,
+            'slots': slot_serializer.data
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+        
+    
+
+
+        
+        
+        

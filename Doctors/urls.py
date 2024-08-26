@@ -20,7 +20,9 @@ urlpatterns = [
 
     path('doctor/edit_profile/', EditDoctorProfileView.as_view(), name='edit_profile'),
     path('doctor/doctor_details/',DoctorProfileView.as_view(),name = 'doctor_details'),
-    path('doctor/<int:doctor_id>/documents/',DocumentUpload.as_view(), name='documents')
+    path('doctor/<int:doctor_id>/documents/',DocumentUpload.as_view(), name='documents'),
+
+    path('delete-expired-slots/', delete_expired_slots, name='delete_expired_slots'),
 ]
 
 

@@ -238,142 +238,59 @@ from .models import Slots, DoctorProfile
 from datetime import datetime, timedelta
 from django.utils import timezone
 from rest_framework import status
+from .serializers import SlotCreateSerializer
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from rest_framework.generics import CreateAPIView
+
 
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-class GenerateSlots(APIView):
+class GenerateSlots(CreateAPIView):
+    queryset = Slots.objects.all()
+    serializer_class = SlotCreateSerializer
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
-    def post(self, request):
-        try:
-            doctor = DoctorProfile.objects.get(user=request.user)
-
-            # Check if the request data is a dictionary (single slot configuration)
-            slot_data = request.data
-            if not isinstance(slot_data, dict):
-                return Response({'status': 'error', 'message': 'Invalid data format. Expected a single slot configuration.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            # Extract slot details
-            start_time_str = slot_data.get('start_time')
-            end_time_str = slot_data.get('end_time')
-            slot_duration = slot_data.get('duration')
-            end_date_str = slot_data.get('end_date')
-
-            # Validate the input data
-            if not start_time_str or not end_time_str or slot_duration is None or not end_date_str:
-                return Response({'status': 'error', 'message': 'Start time, end time, slot duration, and end date must be provided.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            try:
-                # Convert the start and end times from 12-hour format to datetime objects
-                start_time = timezone.make_aware(
-                    datetime.combine(
-                        timezone.localtime().date(),
-                        datetime.strptime(start_time_str, "%I:%M %p").time()
-                    )
-                )
-                end_time = timezone.make_aware(
-                    datetime.combine(
-                        timezone.localtime().date(),
-                        datetime.strptime(end_time_str, "%I:%M %p").time()
-                    )
-                )
-                end_date = timezone.make_aware(datetime.strptime(end_date_str, "%Y-%m-%d"))
-
-                if start_time >= end_time:
-                    return Response({'status': 'error', 'message': 'End time must be after start time.'}, status=status.HTTP_400_BAD_REQUEST)
-
-                # Calculate slots
-                slots_created = 0
-                current_date = timezone.localtime().date()
-
-                while current_date <= end_date.date():
-                    slot_start = timezone.make_aware(datetime.combine(current_date, start_time.time()))
-                    slot_end = timezone.make_aware(datetime.combine(current_date, end_time.time()))
-
-                    while slot_start < slot_end:
-                        slot_end_time = slot_start + timedelta(minutes=slot_duration)
-                        if slot_end_time > slot_end:
-                            slot_end_time = slot_end
-
-                        # Check if the slot already exists
-                        existing_slot = Slots.objects.filter(
-                            doctor=doctor,
-                            start_time=slot_start,
-                            end_time=slot_end_time,
-                            duration=slot_duration,
-                            end_date=end_date  # Include end_date in the filter if necessary
-                        ).exists()
-
-                        if not existing_slot:
-                            new_slot = Slots(
-                                doctor=doctor,
-                                start_time=slot_start,
-                                end_time=slot_end_time,
-                                duration=slot_duration,
-                                end_date=end_date  # Set end_date here
-                            )
-                            new_slot.save()
-                            slots_created += 1
-
-                        # Move to the next slot
-                        slot_start = slot_end_time
-
-                    # Move to the next day
-                    current_date += timedelta(days=1)
-
-                return Response({'status': 'success', 'message': f'{slots_created} slots successfully created'}, status=status.HTTP_201_CREATED)
-
-            except ValueError as e:
-                return Response({'status': 'error', 'message': f'Invalid date/time format: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            # Log the exception details for debugging
-            logger.error(f"Error: {str(e)}")
-            return Response({'status': 'error', 'message': 'An error occurred'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-class SaveSelectedSlots(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
-    def post(self, request):
-        selected_slots = request.data.get('slots', [])
+    def post(self, request, *args, **kwargs):
+        # Initialize the serializer with the provided data
+        serializer = self.get_serializer(data=request.data, context={'request': request})
         
-        user = request.user 
-
-
-        # Debugging: print selected slots and user information
-        print(f'Selected slots for {user.username}: {selected_slots}')
-
-        # You should include logic to save the selected slots here
-
-        return Response({'status': 'success', 'message': 'Slots successfully saved'}, status=status.HTTP_200_OK)
+        # Validate the data and handle creation
+        if serializer.is_valid():
+            result = serializer.save()
+            return Response({
+                'status': 'success',
+                'message': f"{result['slots_created']} slots successfully created"
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'status': 'error',
+                'message': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from .models import Slots
-from .serializers import SlotSerializer
+
 from django.utils import timezone
 import logging
 
 logger = logging.getLogger(__name__)
 
+
+
 class SlotListView(generics.ListAPIView):
-    serializer_class = SlotSerializer
+    serializer_class = SlotCreateSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         doctor_id = self.request.query_params.get('doctor_id')
         start_date_str = self.request.query_params.get('start_date')
-        duration_str = self.request.query_params.get('duration')
         end_date_str = self.request.query_params.get('end_date')
 
         # Initial queryset for unblocked slots
@@ -393,53 +310,76 @@ class SlotListView(generics.ListAPIView):
                 logger.error("Invalid date format provided")
                 # You can handle this error further if needed
 
+        # Cleanup outdated slots
+        current_time = timezone.now()
+        outdated_slots = Slots.objects.filter(
+            start_time__lt=current_time,
+            start_date__lte=current_time.date()
+        )
+        outdated_count = outdated_slots.count()
+        outdated_slots.delete()
+        logger.info(f"Deleted {outdated_count} outdated slots")
+
+        # Remove duplicate slots based on date and time
+        # Note: Distinct on multiple fields may need custom logic depending on the database.
+        # This example assumes PostgreSQL, which supports distinct on multiple fields.
+        queryset = queryset.order_by('start_time', 'end_time', 'start_date').distinct('start_time', 'end_time', 'start_date')
+
         # Logging: print the doctor_id and queryset
         logger.debug(f'Doctor ID: {doctor_id}')
         logger.debug(f'Queryset: {queryset}')
 
-        return queryset.distinct()
-
-
-
-class SlotDetailView(generics.RetrieveAPIView):
-    
-    queryset = Slots.objects.all()
-    serializer_class = SlotSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        # Filter out blocked slots
-        return super().get_queryset().filter(is_blocked=False)
+        return queryset
 
 
 
 
 
 
-from django.views.decorators.csrf import csrf_exempt
+from rest_framework import status, generics, permissions
+from rest_framework.decorators import api_view
 
 
-class DeleteSlotView(APIView):
+
+
+class DeleteSlotView(generics.GenericAPIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = SlotDeleteSerializer
+
+    def delete(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                serializer.delete_slot()
+                return Response({'status': 'success', 'message': 'Slot successfully deleted'}, status=status.HTTP_200_OK)
+            except ValidationError as e:
+                return Response({'status': 'error', 'message': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            except Slots.DoesNotExist:
+                return Response({'status': 'error', 'message': 'Slot not found or already deleted'}, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                logger.error(f"Error deleting slot: {str(e)}")
+                return Response({'status': 'error', 'message': 'An error occurred while deleting the slot'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+def delete_expired_slots(request):
+    current_time = timezone.now()
+    current_date = current_time.date()
+
+    # Filter slots to delete
+    expired_slots = Slots.objects.filter(
+        start_time__lt=current_time,  # Start time has passed
+        start_date__lte=current_date  # Start date is today or earlier
+    )
     
-    @csrf_exempt
-    def delete(self, request, slot_id):
-        try:
-            # Retrieve the slot by id and ensure it belongs to the current doctor
-            doctor = DoctorProfile.objects.get(user=request.user)
-            slot = Slots.objects.get(id=slot_id, doctor=doctor)
+    # Delete expired slots
+    deleted_count, _ = expired_slots.delete()
 
-            # Delete the slot
-            slot.delete()
-            return Response({'status': 'success', 'message': 'Slot successfully deleted'}, status=status.HTTP_200_OK)
+    return Response({'message': f'{deleted_count} expired slots deleted.'}, status=status.HTTP_200_OK)
 
-        except Slots.DoesNotExist:
-            return Response({'status': 'error', 'message': 'Slot not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        except Exception as e:
-            logger.error(f"Error deleting slot: {str(e)}")
-            return Response({'status': 'error', 'message': 'An error occurred while deleting the slot'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)     
 
 
 
@@ -459,7 +399,7 @@ class EditSlot(APIView):
         slot = self.get_slot(slot_id, request.user)
         if slot is None:
             return Response({'error': 'Slot does not exist'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = SlotSerializer(slot)
+        serializer = SlotCreateSerializer(slot)
         return Response(serializer.data)
 
     def patch(self, request, slot_id):

@@ -17,14 +17,18 @@ DEBUG = True
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
+    
 ]
 # settings.py
 CSRF_COOKIE_SECURE = False  # Should be True in production with HTTPS
-CSRF_TRUSTED_ORIGINS = ['http://localhost:8000']
+CSRF_TRUSTED_ORIGINS = ['http://localhost:8000',
+                        'http://localhost:5173',
+                        
+                        ]
 
 
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:5173',  # Include your frontend's URL here
+      # Include your frontend's URL here
 ]
 
 
@@ -48,6 +52,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'rest_framework_simplejwt',
     'corsheaders',
+    'debug_toolbar',
     
 ]
 
@@ -59,6 +64,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'debug_toolbar.middleware.DebugToolbarMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -173,7 +179,6 @@ EMAIL_HOST_PASSWORD = 'xtjz gujy joix asvl'
 
 
 
-
 # Simple JWT settings
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=50),
@@ -211,4 +216,8 @@ SIMPLE_JWT = {
 # settings.py
 AUTH_USER_MODEL = 'Users.MyUser'
 
-USE_TZ = True 
+
+
+
+
+

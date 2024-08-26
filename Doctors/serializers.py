@@ -77,7 +77,105 @@ class OtpVerificationSerializer(serializers.Serializer):
 
 
 
+from django.utils.timezone import make_aware, utc
 
+
+class SlotCreateSerializer(serializers.ModelSerializer):
+    start_time = serializers.DateTimeField()
+    end_time = serializers.DateTimeField()
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+
+    class Meta:
+        model = Slots
+        fields = ['id', 'start_time', 'end_time', 'duration', 'start_date', 'end_date', 'is_blocked','doctor']
+
+    def validate(self, data):
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        slot_duration = data.get('duration')
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+
+        if not start_time or not end_time or slot_duration is None or not start_date or not end_date:
+            raise serializers.ValidationError('Start time, end time, slot duration, start date, and end date must be provided.')
+
+        # Ensure end time is after start time
+        if start_time >= end_time:
+            raise serializers.ValidationError('End time must be after start time.')
+
+        # Ensure slot duration is at least 1 minute
+        if slot_duration < 1:
+            raise serializers.ValidationError('Duration must be at least 1 minute.')
+
+        # Ensure the slots are not created in the past
+        if start_time < timezone.now():
+            raise serializers.ValidationError('Cannot create slots in the past.')
+
+        # Check for existing slots with the same start time and end date
+        doctor = self.context['request'].user.doctorprofile
+        existing_slots = Slots.objects.filter(
+            doctor=doctor,
+            start_time=start_time,
+            start_date=start_date,
+           
+        )
+        if existing_slots.exists():
+            raise serializers.ValidationError('A slot with the same start time and end date already exists.')
+
+        return data
+
+    def create(self, validated_data):
+        doctor = DoctorProfile.objects.get(user=self.context['request'].user)
+        start_time = validated_data.get('start_time')
+        end_time = validated_data.get('end_time')
+        slot_duration = validated_data.get('duration')
+        start_date = validated_data.get('start_date')
+        end_date = validated_data.get('end_date')
+
+        slots_created = 0
+        current_date = start_date
+        current_time = timezone.now()
+
+        while current_date <= end_date:
+            # Adjust slot_start and slot_end to the specific date
+            slot_start = timezone.make_aware(datetime.combine(current_date, start_time.time()), timezone.get_current_timezone())
+            slot_end = timezone.make_aware(datetime.combine(current_date, end_time.time()), timezone.get_current_timezone())
+
+            while slot_start < slot_end:
+                slot_end_time = slot_start + timedelta(minutes=slot_duration)
+                if slot_end_time > slot_end:
+                    slot_end_time = slot_end
+
+                # Ensure slots are only created for future times
+                if slot_start >= current_time:
+                    # Check for existing slots with the same start time and end date
+                    if not Slots.objects.filter(
+                        doctor=doctor,
+                        start_time=slot_start,
+                        end_time=slot_end_time,
+                        duration=slot_duration,
+                        start_date=start_date,
+                        end_date=current_date
+                    ).exists():
+                        new_slot = Slots(
+                            doctor=doctor,
+                            start_time=slot_start,
+                            end_time=slot_end_time,
+                            duration=slot_duration,
+                            start_date=start_date,
+                            end_date=current_date
+                        )
+                        new_slot.save()
+                        slots_created += 1
+
+                slot_start = slot_end_time
+
+            current_date += timedelta(days=1)
+
+        return {
+            'slots_created': slots_created
+        }
         
 
 
@@ -91,17 +189,25 @@ from .models import DoctorProfile, Document
 class DocumentSerializer(serializers.ModelSerializer):
     doctor_username = serializers.CharField(source='doctor.user.username', read_only=True)
     doctor_specification = serializers.CharField(source='doctor.specification', read_only=True)
-    doctor_id = serializers.IntegerField(source='doctor.doctor_id',read_only=True)
+    doctor_id = serializers.IntegerField(source='doctor.id', read_only=True)
+    is_verified = serializers.BooleanField(source='doctor.is_verified')
 
     class Meta:
         model = Document
-        fields = ['id', 'file', 'uploaded_at', 'doctor_username', 'doctor_specification','doctor_id']
+        fields = ['id', 'file', 'uploaded_at', 'doctor_username', 'doctor_specification','doctor_id','is_verified']
+    
+
+    
+
+
+
 
 class DoctorProfileSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
     email = serializers.SerializerMethodField()
     phone_number = serializers.SerializerMethodField()
     documents = DocumentSerializer(many=True, read_only=True)  # Assuming documents are read-only in this context
+    slots = serializers.SerializerMethodField()  # Add this line
 
     class Meta:
         model = DoctorProfile
@@ -111,7 +217,8 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
             'bio', 'experience', 'available_from', 'available_to',
             'is_verified',
             'profile_pic',
-            'documents'
+            'documents',
+            'slots'
         ]
 
     def get_username(self, obj):
@@ -122,6 +229,10 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
 
     def get_phone_number(self, obj):
         return obj.user.phone_number
+
+    def get_slots(self, obj):
+        slots = obj.slots.filter(start_time__gte=timezone.now()).order_by('start_time')
+        return SlotCreateSerializer(slots, many=True).data
 
     def validate(self, data):
         required_fields = ['first_name', 'last_name', 'specification', 'bio', 'experience', 'available_from', 'available_to']
@@ -155,86 +266,85 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
 
 
 ######################################################################################################################
-class SlotSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Slots
-        fields = ['id','start_time', 'end_time', 'duration', 'end_date']
-
-class SlotViewSet(viewsets.ModelViewSet):
-    queryset = Slots.objects.all()
-    serializer_class = SlotSerializer
-
-    def partial_update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        if serializer.is_valid():
-            self.perform_update(serializer)
-            return Response(serializer.data)
-        else:
-            return Response(serializer.errors, status=Status.HTTP_400_BAD_REQUEST)
-
-class SlotViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Slots.objects.all()
-    serializer_class = SlotSerializer
-
-    def get_queryset(self):
-        doctor_id = self.request.query_params.get('doctor_id')
-        start_date_str = self.request.query_params.get('start_date')
-        end_date_str = self.request.query_params.get('end_date')
-
-        # Initial queryset for unblocked slots
-        queryset = self.queryset.filter(is_blocked=False)
-
-        # Filter by doctor_id if provided
-        if doctor_id:
-            queryset = queryset.filter(doctor_id=doctor_id)
-
-        # Filter by date range if provided
-        if start_date_str and end_date_str:
-            try:
-                start_date = timezone.make_aware(datetime.strptime(start_date_str, "%Y-%m-%d"))
-                end_date = timezone.make_aware(datetime.strptime(end_date_str, "%Y-%m-%d"))
-                queryset = queryset.filter(start_time__date__range=[start_date, end_date])
-            except ValueError:
-                logger.error("Invalid date format provided")
-
-        return queryset.distinct()
 
 
-from django.middleware.csrf import CsrfViewMiddleware
 from rest_framework.exceptions import ValidationError
 
-class SlotDeleteSerializer(serializers.Serializer):
-    slot_id = serializers.IntegerField()
+from rest_framework.exceptions import ValidationError
+from django.utils import timezone
+from datetime import datetime, timedelta
+from .models import Slots, DoctorProfile
+
+class SlotDeleteSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField()
+
+    class Meta:
+        model = Slots
+        fields = ['id']
 
     def validate(self, attrs):
+        """
+        Validate that the slot exists, is associated with the current user,
+        and handle outdated slot cleanup.
+        """
         request = self.context['request']
-        self._validate_csrf(request)
-        return super().validate(attrs)
+        user = request.user
+        slot_id = attrs.get('id')
 
-    def validate_slot_id(self, value):
-        """
-        Validate that the slot exists and is associated with the current user.
-        """
-        from .models import Slots  # Import here to avoid circular import issues
-        user = self.context['request'].user
+        # Ensure current time is timezone-aware and convert to local time
+        current_time_utc = timezone.now()
+        current_time_local = timezone.localtime(current_time_utc)
+        current_date_local = current_time_local.date()
+        
+        # Print debug information
+        print(f"Current UTC time: {current_time_utc}")
+        print(f"Current local time: {current_time_local}")
+        print(f"Current local date: {current_date_local}")
 
+        # Filter slots to delete based on local time
+        expired_slots = Slots.objects.filter(
+            start_time__lt=current_time_local,  # Start time has passed
+            start_date__lte=current_date_local  # Start date is today or earlier
+        )
+        
+        # Print debug information
+        print(f"Expired slots query: {expired_slots.query}")
+        print(f"Expired slots before deletion: {list(expired_slots)}")
+
+        # Delete expired slots
+        deleted_count, _ = expired_slots.delete()
+        print(f"Number of expired slots deleted: {deleted_count}")
+
+        # Validate if the slot exists and is associated with the current user
         try:
-            slot = Slots.objects.get(id=value, user=user)
+            slot = Slots.objects.get(id=slot_id, doctor__user=user)
         except Slots.DoesNotExist:
-            raise serializers.ValidationError('Slot not found or not associated with the current user.')
+            raise ValidationError('Slot not found or not associated with the current user.')
 
-        return value
+        return attrs
 
+    def delete_slot(self):
+        """
+        Perform the actual deletion of the slot.
+        """
+        slot_id = self.validated_data['id']
+        # Perform the actual deletion
+        Slots.objects.filter(id=slot_id).delete()
+
+
+
+    from django.middleware.csrf import CsrfViewMiddleware
     def _validate_csrf(self, request):
         """
         Validates the CSRF token.
         """
         try:
-            csrf_middleware = CsrfViewMiddleware()
+            csrf_middleware = CsrfViewMiddleware() # type: ignore
             csrf_middleware.process_view(request, None, (), {})
         except ValidationError as e:
-            raise serializers.ValidationError('CSRF token missing or incorrect.')
+            raise serializers.ValidationError('CSRF token missing or incorrect.') 
+
+    
 
 
 

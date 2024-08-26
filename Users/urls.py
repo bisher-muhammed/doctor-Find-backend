@@ -13,6 +13,8 @@ urlpatterns = [
     path('fpassword/',ForgotPassword.as_view(),name='fpassword'),
     path('user_details/',UserProfileView.as_view(),name='user_detials'),
     path('edit_profile/', EditProfileView.as_view(), name='edit_profile'),
+    path('doctors_list/',Doctors_list.as_view(),name='doctors_list'),
+    path('available_slots/<int:doctor_id>/', SlotListView.as_view(), name='available_slots'),
 
     
 ]
