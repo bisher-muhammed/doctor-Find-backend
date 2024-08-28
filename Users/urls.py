@@ -15,6 +15,11 @@ urlpatterns = [
     path('edit_profile/', EditProfileView.as_view(), name='edit_profile'),
     path('doctors_list/',Doctors_list.as_view(),name='doctors_list'),
     path('available_slots/<int:doctor_id>/', SlotListView.as_view(), name='available_slots'),
+    
+    path('book-slot/<int:doctor_id>/<int:slot_id>/', BookSlotView.as_view(), name='book_slot'),
+    path('my-appointments/', MyAppointments.as_view(), name='my_appointments'),
+
+
 
     
 ]

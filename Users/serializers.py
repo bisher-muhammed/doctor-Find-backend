@@ -2,9 +2,11 @@ from django.forms import ValidationError
 from rest_framework import serializers
 from .models import MyUser,UserProfile
 from datetime import date
+from Doctors.models import Bookings
 from django.contrib.auth import get_user_model,authenticate
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 User = get_user_model()
+from Doctors.serializers import DoctorProfileSerializer, SlotCreateSerializer
 
 
 
@@ -172,3 +174,15 @@ class UserProfileSerializer(serializers.ModelSerializer):
             if not all(data.get(field) for field in ['city', 'state', 'country']):
                 raise serializers.ValidationError("City, state, and country must all be provided together.")
         return data
+
+
+
+
+class BookingSerializer(serializers.ModelSerializer):
+    user = UserSerializer()
+    doctor = DoctorProfileSerializer()
+    slots = SlotCreateSerializer()
+
+    class Meta:
+        model = Bookings
+        fields = ['id', 'user', 'doctor', 'slots', 'created_at', 'status']

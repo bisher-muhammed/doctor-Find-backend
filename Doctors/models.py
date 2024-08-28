@@ -5,7 +5,7 @@ from datetime import timedelta
 
 
 class DoctorProfile(models.Model):
-    user = models.OneToOneField(MyUser,on_delete=models.CASCADE)
+    user = models.OneToOneField(MyUser, on_delete=models.CASCADE, related_name='doctor_profile')
     first_name = models.CharField(max_length=10, null=True,blank =True)
     last_name = models.CharField(max_length=10, null= True,blank=True)
     specification = models.CharField(max_length=100,null=True,blank= True)
@@ -30,6 +30,8 @@ class Slots(models.Model):
     end_time = models.DateTimeField()
     duration = models.PositiveIntegerField()  # Add duration field here
     is_blocked = models.BooleanField(default=False)
+    is_booked = models.BooleanField(default=False)
+    
     
     end_date = models.DateField()
 
@@ -54,3 +56,23 @@ class Document(models.Model):
     def __str__(self):
         return f"{self.file.name} uploaded by {self.doctor.user.username}"
 
+
+
+
+from django.db import models
+
+class Bookings(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('cancelled', 'Cancelled'),
+        ('completed', 'Completed'),
+    ]
+    
+    user = models.ForeignKey(MyUser, on_delete=models.CASCADE)
+    doctor = models.ForeignKey('DoctorProfile', on_delete=models.CASCADE, related_name='booking')
+    slots = models.OneToOneField(Slots, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    
+    def __str__(self):
+        return f"Booking by {self.user.username} with {self.doctor.user.username} on {self.slots.start_time}"

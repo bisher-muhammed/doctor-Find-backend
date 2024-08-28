@@ -7,13 +7,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .serializers import *
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView,CreateAPIView
 from Doctors.serializers import DoctorProfileSerializer,SlotCreateSerializer
 
 
 
 
-from Doctors.models import DoctorProfile,Slots
+from Doctors.models import DoctorProfile,Slots,Bookings
 from .models import UserProfile  # Ensure UserProfile is imported
 from .utils import send_otp_via_email
 from django.contrib.auth.hashers import make_password
@@ -296,7 +296,7 @@ class SlotListView(ListAPIView):
         try:
             doctor = DoctorProfile.objects.get(id=doctor_id)
             if doctor.is_verified:
-                slots = Slots.objects.filter(doctor=doctor)
+                slots = Slots.objects.filter(doctor=doctor,is_booked = False)
                 
                 return slots
             else:
@@ -338,7 +338,53 @@ class SlotListView(ListAPIView):
 
         
     
+class BookSlotView(CreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BookingSerializer
 
+    def post(self, request, doctor_id, slot_id):
+        try:
+            # Retrieve the doctor and slot based on the provided IDs
+            doctor = DoctorProfile.objects.get(id=doctor_id)
+            slot = Slots.objects.get(id=slot_id, doctor=doctor, is_booked=False)
+
+            # Check if the slot is already booked (redundant since you're filtering by is_booked=False)
+            if slot.is_booked:
+                return Response({"error": "This slot is already booked."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Create a new booking instance with the correct field name
+            booking = Bookings.objects.create(user=request.user, doctor=doctor, slots=slot)
+            
+            # Mark the slot as booked
+            slot.is_booked = True
+            slot.save()
+
+            # Serialize the booking data
+            serializer = BookingSerializer(booking)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except DoctorProfile.DoesNotExist:
+            return Response({"error": "Doctor not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Slots.DoesNotExist:
+            return Response({"error": "Slot not found or already booked."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def get_queryset(self):
+        # Return an empty queryset as it's not needed in this view
+        return Bookings.objects.none()
+
+
+class MyAppointments(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BookingSerializer
+    def get_queryset(self):
+        user = self.request.user
+        return Bookings.objects.filter(user=user)
+    
+
+        
+    
 
         
         

@@ -7,7 +7,7 @@ from rest_framework import status, permissions
 from Users.utils import send_otp_via_email
 from .serializers import *
 from django.contrib.auth.hashers import make_password  # Import to hash the new password
-from .models import DoctorProfile, Document
+from .models import Bookings, DoctorProfile, Document
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 import random
@@ -240,7 +240,7 @@ from django.utils import timezone
 from rest_framework import status
 from .serializers import SlotCreateSerializer
 from rest_framework.response import Response
-from rest_framework.generics import CreateAPIView
+from rest_framework.generics import CreateAPIView,ListAPIView
 
 
 
@@ -251,7 +251,7 @@ logger = logging.getLogger(__name__)
 class GenerateSlots(CreateAPIView):
     queryset = Slots.objects.all()
     serializer_class = SlotCreateSerializer
-    authentication_classes = [JWTAuthentication]
+    
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
@@ -285,32 +285,33 @@ logger = logging.getLogger(__name__)
 
 
 class SlotListView(generics.ListAPIView):
-    serializer_class = SlotCreateSerializer
     permission_classes = [IsAuthenticated]
-
+    serializer_class = SlotCreateSerializer
     def get_queryset(self):
-        doctor_id = self.request.query_params.get('doctor_id')
+        user = self.request.user
+        
+        try:
+            # Corrected related_name to doctor_profile
+            doctor_profile = user.doctor_profile
+        except DoctorProfile.DoesNotExist:
+            # Handle the case where the user does not have a doctor profile
+            logger.error(f'User {user.username} does not have an associated doctor profile.')
+            return Slots.objects.none()
+
+        # Continue filtering the queryset
         start_date_str = self.request.query_params.get('start_date')
         end_date_str = self.request.query_params.get('end_date')
 
-        # Initial queryset for unblocked slots
-        queryset = Slots.objects.filter(is_blocked=False)
+        queryset = Slots.objects.filter(doctor=doctor_profile, is_blocked=False)
 
-        # Filter by doctor_id if provided
-        if doctor_id:
-            queryset = queryset.filter(doctor_id=doctor_id)
-
-        # Filter by date range if provided
         if start_date_str and end_date_str:
             try:
                 start_date = timezone.make_aware(datetime.strptime(start_date_str, "%Y-%m-%d"))
                 end_date = timezone.make_aware(datetime.strptime(end_date_str, "%Y-%m-%d"))
-                queryset = queryset.filter(start_time__date__range=[start_date, end_date])
+                queryset = queryset.filter(start_date__gte=start_date, start_date__lte=end_date)
             except ValueError:
                 logger.error("Invalid date format provided")
-                # You can handle this error further if needed
 
-        # Cleanup outdated slots
         current_time = timezone.now()
         outdated_slots = Slots.objects.filter(
             start_time__lt=current_time,
@@ -320,24 +321,17 @@ class SlotListView(generics.ListAPIView):
         outdated_slots.delete()
         logger.info(f"Deleted {outdated_count} outdated slots")
 
-        # Remove duplicate slots based on date and time
-        # Note: Distinct on multiple fields may need custom logic depending on the database.
-        # This example assumes PostgreSQL, which supports distinct on multiple fields.
-        queryset = queryset.order_by('start_time', 'end_time', 'start_date').distinct('start_time', 'end_time', 'start_date')
-
-        # Logging: print the doctor_id and queryset
-        logger.debug(f'Doctor ID: {doctor_id}')
+        logger.debug(f'User: {user.username}')
+        logger.debug(f'Doctor Profile: {doctor_profile}')
         logger.debug(f'Queryset: {queryset}')
 
         return queryset
 
 
 
-
-
-
 from rest_framework import status, generics, permissions
 from rest_framework.decorators import api_view
+from Users.serializers import BookingSerializer
 
 
 
@@ -569,7 +563,46 @@ class DocumentUpload(APIView):
 
         
 
-    
 
+from django.utils import timezone
+from datetime import timedelta
 
+class BookingList(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BookingSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        now = timezone.now()
+        one_day_ago = now - timedelta(days=1)  # Adjust the timedelta as needed
+
+        # Check if the user has a doctor profile
+        if hasattr(user, 'doctor_profile'):
+            doctor_profile = user.doctor_profile
+            print(doctor_profile)
+            # Doctor: filter bookings by their doctor profile
+            return Bookings.objects.filter(
+                doctor=doctor_profile,
+                created_at__gte=one_day_ago
+            )
+        else:
+            # Patient: filter bookings by their user profile
+            return Bookings.objects.filter(
+                user=user,
+                created_at__gte=one_day_ago
+            )
+
+@api_view(['PATCH'])
+def update_booking_status(request, pk):
+    try:
+        booking = Bookings.objects.get(pk=pk)
+    except Bookings.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    serializer = BookingSerializer(booking, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
             

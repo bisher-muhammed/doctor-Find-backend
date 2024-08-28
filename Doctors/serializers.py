@@ -88,7 +88,8 @@ class SlotCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Slots
-        fields = ['id', 'start_time', 'end_time', 'duration', 'start_date', 'end_date', 'is_blocked','doctor']
+        fields = ['id', 'start_time', 'end_time', 'duration', 'start_date', 'end_date', 'is_blocked', 'doctor', 'is_booked']
+        read_only_fields = ['doctor']
 
     def validate(self, data):
         start_time = data.get('start_time')
@@ -100,25 +101,20 @@ class SlotCreateSerializer(serializers.ModelSerializer):
         if not start_time or not end_time or slot_duration is None or not start_date or not end_date:
             raise serializers.ValidationError('Start time, end time, slot duration, start date, and end date must be provided.')
 
-        # Ensure end time is after start time
         if start_time >= end_time:
             raise serializers.ValidationError('End time must be after start time.')
 
-        # Ensure slot duration is at least 1 minute
         if slot_duration < 1:
             raise serializers.ValidationError('Duration must be at least 1 minute.')
 
-        # Ensure the slots are not created in the past
         if start_time < timezone.now():
             raise serializers.ValidationError('Cannot create slots in the past.')
 
-        # Check for existing slots with the same start time and end date
         doctor = self.context['request'].user.doctorprofile
         existing_slots = Slots.objects.filter(
             doctor=doctor,
             start_time=start_time,
             start_date=start_date,
-           
         )
         if existing_slots.exists():
             raise serializers.ValidationError('A slot with the same start time and end date already exists.')
@@ -126,7 +122,7 @@ class SlotCreateSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        doctor = DoctorProfile.objects.get(user=self.context['request'].user)
+        doctor = self.context['request'].user.doctorprofile  # Assign the doctor from the logged-in user's profile
         start_time = validated_data.get('start_time')
         end_time = validated_data.get('end_time')
         slot_duration = validated_data.get('duration')
@@ -138,7 +134,6 @@ class SlotCreateSerializer(serializers.ModelSerializer):
         current_time = timezone.now()
 
         while current_date <= end_date:
-            # Adjust slot_start and slot_end to the specific date
             slot_start = timezone.make_aware(datetime.combine(current_date, start_time.time()), timezone.get_current_timezone())
             slot_end = timezone.make_aware(datetime.combine(current_date, end_time.time()), timezone.get_current_timezone())
 
@@ -147,9 +142,7 @@ class SlotCreateSerializer(serializers.ModelSerializer):
                 if slot_end_time > slot_end:
                     slot_end_time = slot_end
 
-                # Ensure slots are only created for future times
                 if slot_start >= current_time:
-                    # Check for existing slots with the same start time and end date
                     if not Slots.objects.filter(
                         doctor=doctor,
                         start_time=slot_start,
@@ -176,7 +169,6 @@ class SlotCreateSerializer(serializers.ModelSerializer):
         return {
             'slots_created': slots_created
         }
-        
 
 
 
